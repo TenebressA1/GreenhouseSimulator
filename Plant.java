@@ -4,10 +4,10 @@ import java.util.Random;
 
 public class Plant {
     private String type;
-    private int growthStage; // 0-100
-    private int health; // 0-100
-    private int waterLevel; // 0-100
-    private int fertilizerLevel; // 0-100
+    private int growthStage;
+    private int health;
+    private int waterLevel;
+    private int fertilizerLevel;
     private boolean isAlive = true;
     private Random random = new Random();
     
@@ -99,11 +99,14 @@ public class Plant {
     
     public String getType() { return type; }
     public int getGrowthStage() { return growthStage; }
+    public void setGrowthStage(int growthStage) { this.growthStage = growthStage; }
     public int getHealth() { return health; }
+    public void setHealth(int health) { this.health = health; }
     public int getWaterLevel() { return waterLevel; }
     public void setWaterLevel(int level) { this.waterLevel = Math.max(0, Math.min(100, level)); }
     public int getFertilizerLevel() { return fertilizerLevel; }
     public void setFertilizerLevel(int level) { this.fertilizerLevel = Math.max(0, Math.min(100, level)); }
+    public void setAlive(boolean alive) { isAlive = alive; }
     public boolean isAlive() { return isAlive; }
     public boolean isReadyToHarvest() { return growthStage >= 90 && isAlive; }
     public boolean needsWater() { return waterLevel < 40 && isAlive; }

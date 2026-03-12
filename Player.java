@@ -2,12 +2,14 @@ package greenhousesimulator;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import greenhousesimulator.ui.GameWindow;
 
 public class Player {
     private String name;
     private int experience;
     private List<String> inventory;
     private Random random = new Random();
+    private GameWindow gameWindow;
     
     public Player(String name) {
         this.name = name;
@@ -20,32 +22,44 @@ public class Player {
         inventory.add("Удобрение");
     }
     
+    public void setGameWindow(GameWindow gameWindow) {
+        this.gameWindow = gameWindow;
+    }
+    
+    private void log(String message) {
+        if (gameWindow != null) {
+            gameWindow.log(message);
+        } else {
+            System.out.println(message);
+        }
+    }
+    
     public boolean buyItem(String item, int cost, Greenhouse greenhouse) {
         if (greenhouse.getMoney() >= cost) {
             greenhouse.spendMoney(cost);
             inventory.add(item);
-            System.out.println("[ПОКУПКА] Куплено: " + item + " за " + cost + " руб.");
+            log("[ПОКУПКА] Куплено: " + item + " за " + cost + " руб.");
             return true;
         }
-        System.out.println("[ОШИБКА] Недостаточно денег!");
+        log("[ОШИБКА] Недостаточно денег!");
         return false;
     }
     
     public boolean plantSeed(String plantType, Greenhouse greenhouse) {
         String seedItem = "Семена_" + plantType;
-        
+
         boolean hasSeeds = inventory.stream()
             .anyMatch(item -> item.equals(seedItem));
-        
+
         if (hasSeeds) {
             inventory.remove(seedItem);
             greenhouse.addPlant(new Plant(plantType));
             addExperience(10);
-            System.out.println("[ПОСАДКА] Посажено растение: " + plantType);
+            log("[ПОСАДКА] Посажено растение: " + plantType);
             return true;
         }
-        
-        System.out.println("[ОШИБКА] Нет семян " + plantType.toLowerCase() + "а!");
+
+        log("[ОШИБКА] Нет семян " + plantType.toLowerCase() + "а!");
         return false;
     }
     
@@ -62,17 +76,16 @@ public class Player {
         if (hasFertilizer) {
             inventory.remove("Удобрение");
             greenhouse.fertilizeAllPlants();
-            System.out.println("[УДОБРЕНИЕ] Использовано удобрение");
         } else {
-            System.out.println("[ОШИБКА] Нет удобрений!");
+            log("[ОШИБКА] Нет удобрений!");
         }
     }
     
     public void showInventory() {
-        System.out.println("\n=== ИНВЕНТАРЬ ===");
+        log("\n=== ИНВЕНТАРЬ ===");
         
         if (inventory.isEmpty()) {
-            System.out.println("Инвентарь пуст");
+            log("Инвентарь пуст");
             return;
         }
         
@@ -84,16 +97,16 @@ public class Player {
             .forEach(entry -> {
                 String item = entry.getKey();
                 long count = entry.getValue();
-                System.out.printf("%-15s: %d шт.\n", item, count);
+                log(String.format("%-15s: %d шт.", item, count));
             });
             
-        System.out.println("Всего предметов: " + inventory.size());
+        log("Всего предметов: " + inventory.size());
     }
     
     public void addExperience(int amount) {
         experience += amount;
         if (experience >= 100) {
-            System.out.println("[УРОВЕНЬ] Уровень повышен!");
+            log("[УРОВЕНЬ] Уровень повышен!");
             experience -= 100;
         }
     }

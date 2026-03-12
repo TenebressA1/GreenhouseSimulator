@@ -17,6 +17,7 @@ public class GreenhouseDatabase {
                 conn = DriverManager.getConnection(URL);
                 Statement stmt = conn.createStatement();
                 
+                // Таблица для рекордов
                 stmt.execute("""
                     CREATE TABLE IF NOT EXISTS scores (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,6 +27,43 @@ public class GreenhouseDatabase {
                         plants_harvested INTEGER,
                         money INTEGER,
                         save_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """);
+                
+                // СОЗДАЕМ ТАБЛИЦЫ ТОЛЬКО ЕСЛИ ИХ НЕТ
+                stmt.execute("""
+                    CREATE TABLE IF NOT EXISTS saves (
+                        save_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        player_name TEXT,
+                        save_name TEXT,
+                        day INTEGER,
+                        money INTEGER,
+                        temperature INTEGER,
+                        humidity INTEGER,
+                        save_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """);
+                
+                stmt.execute("""
+                    CREATE TABLE IF NOT EXISTS saved_plants (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        save_id INTEGER,
+                        plant_type TEXT,
+                        growth_stage INTEGER,
+                        health INTEGER,
+                        water_level INTEGER,
+                        fertilizer_level INTEGER,
+                        is_alive INTEGER,
+                        FOREIGN KEY (save_id) REFERENCES saves(save_id) ON DELETE CASCADE
+                    )
+                    """);
+                
+                stmt.execute("""
+                    CREATE TABLE IF NOT EXISTS saved_inventory (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        save_id INTEGER,
+                        item_name TEXT,
+                        FOREIGN KEY (save_id) REFERENCES saves(save_id) ON DELETE CASCADE
                     )
                     """);
             }
@@ -40,17 +78,195 @@ public class GreenhouseDatabase {
         }
     }
     
-    public static void saveGame(String playerName, Greenhouse greenhouse, Player player) {
+    public static boolean saveGame(String playerName, String saveName, Greenhouse greenhouse, Player player) {
+        try {
+            checkConnection();
+            conn.setAutoCommit(false);
+            
+            PreparedStatement pstmt = conn.prepareStatement(
+                "INSERT INTO saves (player_name, save_name, day, money, temperature, humidity) VALUES (?, ?, ?, ?, ?, ?)",
+                Statement.RETURN_GENERATED_KEYS
+            );
+            
+            pstmt.setString(1, playerName);
+            pstmt.setString(2, saveName);
+            pstmt.setInt(3, greenhouse.getDay());
+            pstmt.setInt(4, greenhouse.getMoney());
+            pstmt.setInt(5, greenhouse.getTemperature());
+            pstmt.setInt(6, greenhouse.getHumidity());
+            
+            pstmt.executeUpdate();
+            
+            ResultSet rs = pstmt.getGeneratedKeys();
+            int saveId = -1;
+            if (rs.next()) {
+                saveId = rs.getInt(1);
+            }
+            
+            if (saveId == -1) {
+                conn.rollback();
+                return false;
+            }
+            
+            PreparedStatement plantStmt = conn.prepareStatement(
+                "INSERT INTO saved_plants (save_id, plant_type, growth_stage, health, water_level, fertilizer_level, is_alive) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            );
+            
+            for (Plant plant : greenhouse.getPlants()) {
+                plantStmt.setInt(1, saveId);
+                plantStmt.setString(2, plant.getType());
+                plantStmt.setInt(3, plant.getGrowthStage());
+                plantStmt.setInt(4, plant.getHealth());
+                plantStmt.setInt(5, plant.getWaterLevel());
+                plantStmt.setInt(6, plant.getFertilizerLevel());
+                plantStmt.setInt(7, plant.isAlive() ? 1 : 0);
+                plantStmt.addBatch();
+            }
+            plantStmt.executeBatch();
+            
+            PreparedStatement invStmt = conn.prepareStatement(
+                "INSERT INTO saved_inventory (save_id, item_name) VALUES (?, ?)"
+            );
+            
+            for (String item : player.getInventory()) {
+                invStmt.setInt(1, saveId);
+                invStmt.setString(2, item);
+                invStmt.addBatch();
+            }
+            invStmt.executeBatch();
+            
+            conn.commit();
+            conn.setAutoCommit(true);
+            
+            System.out.println("[СИСТЕМА] Игра сохранена как '" + saveName + "'");
+            return true;
+            
+        } catch (SQLException e) {
+            try {
+                conn.rollback();
+            } catch (SQLException ex) {}
+            System.err.println("[ОШИБКА] Не удалось сохранить: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    public static List<SaveInfo> getSavesList() {
+        List<SaveInfo> saves = new ArrayList<>();
+        
+        try {
+            checkConnection();
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery("""
+                SELECT save_id, player_name, save_name, day, money, save_date 
+                FROM saves 
+                ORDER BY save_date DESC
+                """);
+            
+            while (rs.next()) {
+                saves.add(new SaveInfo(
+                    rs.getInt("save_id"),
+                    rs.getString("player_name"),
+                    rs.getString("save_name"),
+                    rs.getInt("day"),
+                    rs.getInt("money"),
+                    rs.getString("save_date")
+                ));
+            }
+            
+        } catch (SQLException e) {
+            System.err.println("[ОШИБКА] Не удалось загрузить список сохранений: " + e.getMessage());
+        }
+        
+        return saves;
+    }
+    
+    public static SaveData loadGame(int saveId) {
         try {
             checkConnection();
             
             PreparedStatement pstmt = conn.prepareStatement(
-                "INSERT INTO scores (player_name, score, day, plants_harvested, money) VALUES (?, ?, ?, ?, ?)");
+                "SELECT * FROM saves WHERE save_id = ?"
+            );
+            pstmt.setInt(1, saveId);
+            ResultSet rs = pstmt.executeQuery();
             
-            int plantsHarvested = greenhouse.getPlants().stream()
-                .filter(Plant::isReadyToHarvest)
-                .mapToInt(p -> 1)
-                .sum();
+            if (!rs.next()) {
+                return null;
+            }
+            
+            String playerName = rs.getString("player_name");
+            int day = rs.getInt("day");
+            int money = rs.getInt("money");
+            int temperature = rs.getInt("temperature");
+            int humidity = rs.getInt("humidity");
+            
+            List<Plant> plants = new ArrayList<>();
+            PreparedStatement plantStmt = conn.prepareStatement(
+                "SELECT * FROM saved_plants WHERE save_id = ?"
+            );
+            plantStmt.setInt(1, saveId);
+            ResultSet plantRs = plantStmt.executeQuery();
+            
+            while (plantRs.next()) {
+                Plant plant = new Plant(plantRs.getString("plant_type"));
+                plant.setGrowthStage(plantRs.getInt("growth_stage"));
+                plant.setHealth(plantRs.getInt("health"));
+                plant.setWaterLevel(plantRs.getInt("water_level"));
+                plant.setFertilizerLevel(plantRs.getInt("fertilizer_level"));
+                plant.setAlive(plantRs.getInt("is_alive") == 1);
+                plants.add(plant);
+            }
+            
+            List<String> inventory = new ArrayList<>();
+            PreparedStatement invStmt = conn.prepareStatement(
+                "SELECT * FROM saved_inventory WHERE save_id = ?"
+            );
+            invStmt.setInt(1, saveId);
+            ResultSet invRs = invStmt.executeQuery();
+            
+            while (invRs.next()) {
+                inventory.add(invRs.getString("item_name"));
+            }
+            
+            return new SaveData(playerName, day, money, temperature, humidity, plants, inventory);
+            
+        } catch (SQLException e) {
+            System.err.println("[ОШИБКА] Не удалось загрузить игру: " + e.getMessage());
+            return null;
+        }
+    }
+    
+    public static boolean deleteSave(int saveId) {
+        try {
+            checkConnection();
+            
+            PreparedStatement pstmt = conn.prepareStatement(
+                "DELETE FROM saves WHERE save_id = ?"
+            );
+            pstmt.setInt(1, saveId);
+            pstmt.executeUpdate();
+            
+            return true;
+            
+        } catch (SQLException e) {
+            System.err.println("[ОШИБКА] Не удалось удалить сохранение: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    public static void saveScore(String playerName, Greenhouse greenhouse, Player player) {
+        try {
+            checkConnection();
+            
+            int plantsHarvested = 0;
+            for (Plant plant : greenhouse.getPlants()) {
+                if (plant.isReadyToHarvest()) {
+                    plantsHarvested++;
+                }
+            }
+            
+            PreparedStatement pstmt = conn.prepareStatement(
+                "INSERT INTO scores (player_name, score, day, plants_harvested, money) VALUES (?, ?, ?, ?, ?)");
             
             pstmt.setString(1, playerName);
             pstmt.setInt(2, player.calculateScore());
@@ -60,10 +276,10 @@ public class GreenhouseDatabase {
             
             pstmt.executeUpdate();
             
-            System.out.println("[СИСТЕМА] Игра сохранена в таблице рекордов!");
+            System.out.println("[РЕКОРД] Результат сохранен в таблице рекордов");
             
         } catch (SQLException e) {
-            System.err.println("[ОШИБКА] Не удалось сохранить: " + e.getMessage());
+            System.err.println("[ОШИБКА] Не удалось сохранить рекорд: " + e.getMessage());
         }
     }
     
@@ -102,50 +318,9 @@ public class GreenhouseDatabase {
                 System.out.println("Пока нет результатов. Станьте первым!");
             }
             
-            showStatistics();
-            
         } catch (SQLException e) {
             System.err.println("[ОШИБКА] Не удалось загрузить таблицу: " + e.getMessage());
-            System.out.println("Таблица рекордов временно недоступна.");
         }
-    }
-    
-    private static void showStatistics() {
-        try {
-            checkConnection();
-            
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery("SELECT score, day, money FROM scores");
-            
-            List<Integer> scores = new ArrayList<>();
-            List<Integer> days = new ArrayList<>();
-            List<Integer> moneyList = new ArrayList<>();
-            
-            while (rs.next()) {
-                scores.add(rs.getInt("score"));
-                days.add(rs.getInt("day"));
-                moneyList.add(rs.getInt("money"));
-            }
-            
-            if (!scores.isEmpty()) {
-                System.out.println("\n=== СТАТИСТИКА ===");
-                
-                double avgScore = scores.stream().mapToInt(Integer::intValue).average().orElse(0);
-                double avgDay = days.stream().mapToInt(Integer::intValue).average().orElse(0);
-                double avgMoney = moneyList.stream().mapToInt(Integer::intValue).average().orElse(0);
-                
-                System.out.printf("Средний счет: %.1f\n", avgScore);
-                System.out.printf("Средняя продолжительность: %.1f дней\n", avgDay);
-                System.out.printf("Средний капитал: %.1f руб.\n", avgMoney);
-                
-                int bestScore = scores.stream().max(Integer::compare).orElse(0);
-                int longestGame = days.stream().max(Integer::compare).orElse(0);
-                
-                System.out.println("Лучший счет: " + bestScore);
-                System.out.println("Самая долгая игра: " + longestGame + " дней");
-            }
-            
-        } catch (SQLException e) { }
     }
     
     public static void close() {
@@ -156,6 +331,51 @@ public class GreenhouseDatabase {
             }
         } catch (SQLException e) {
             System.err.println("[ОШИБКА] Не удалось закрыть соединение: " + e.getMessage());
+        }
+    }
+    
+    public static class SaveInfo {
+        public int id;
+        public String playerName;
+        public String saveName;
+        public int day;
+        public int money;
+        public String date;
+        
+        public SaveInfo(int id, String playerName, String saveName, int day, int money, String date) {
+            this.id = id;
+            this.playerName = playerName;
+            this.saveName = saveName;
+            this.day = day;
+            this.money = money;
+            this.date = date;
+        }
+        
+        @Override
+        public String toString() {
+            String shortDate = date.length() > 16 ? date.substring(0, 16) : date;
+            return String.format("%s - День %d, %d руб. (%s)", saveName, day, money, shortDate);
+        }
+    }
+    
+    public static class SaveData {
+        public String playerName;
+        public int day;
+        public int money;
+        public int temperature;
+        public int humidity;
+        public List<Plant> plants;
+        public List<String> inventory;
+        
+        public SaveData(String playerName, int day, int money, int temperature, int humidity, 
+                       List<Plant> plants, List<String> inventory) {
+            this.playerName = playerName;
+            this.day = day;
+            this.money = money;
+            this.temperature = temperature;
+            this.humidity = humidity;
+            this.plants = plants;
+            this.inventory = inventory;
         }
     }
 }

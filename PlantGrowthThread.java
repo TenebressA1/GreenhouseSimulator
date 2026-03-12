@@ -1,20 +1,24 @@
 package greenhousesimulator;
 
+import greenhousesimulator.ui.GameWindow;
+
 public class PlantGrowthThread extends Thread {
     private Greenhouse greenhouse;
+    private GameWindow gameWindow;
     private volatile boolean running = true;
-    private int dayDuration = 120000; // 2 минуты
-    private int healthCheckInterval = 15000; // 15 секунд
+    private int dayDuration = 120000;
+    private int healthCheckInterval = 15000;
     
-    public PlantGrowthThread(Greenhouse greenhouse) {
+    public PlantGrowthThread(Greenhouse greenhouse, GameWindow gameWindow) {
         this.greenhouse = greenhouse;
+        this.gameWindow = gameWindow;
     }
     
     @Override
     public void run() {
-        System.out.println("[ИНФО] 1 игровой день = 2 минуты");
-        System.out.println("[ИНФО] Здоровье проверяется каждые 15 секунд");
-        System.out.println("[ИНФО] Каждый день вода уменьшается на 10 единиц");
+        gameWindow.log("[ИНФО] 1 игровой день = 2 минуты");
+        gameWindow.log("[ИНФО] Здоровье проверяется каждые 15 секунд");
+        gameWindow.log("[ИНФО] Каждый день вода уменьшается на 10 единиц");
         
         long lastDayUpdate = System.currentTimeMillis();
         long lastHealthCheck = System.currentTimeMillis();
@@ -75,7 +79,7 @@ public class PlantGrowthThread extends Thread {
     
     private void updateDay() {
         greenhouse.nextDay();
-        System.out.println("\n[АВТО] Прошел 1 день. День " + greenhouse.getDay());
+        gameWindow.log("\n[АВТО] Прошел 1 день. День " + greenhouse.getDay());
         
         for (Plant plant : greenhouse.getPlants()) {
             if (plant.isAlive()) {
@@ -84,7 +88,7 @@ public class PlantGrowthThread extends Thread {
                 plant.setWaterLevel(newWater);
                 
                 if (newWater == 0) {
-                    System.out.println("[ВНИМАНИЕ] " + plant.getType() + ": вода закончилась!");
+                    gameWindow.log("[ВНИМАНИЕ] " + plant.getType() + ": вода закончилась!");
                 }
             }
         }

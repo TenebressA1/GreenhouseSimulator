@@ -1,15 +1,18 @@
 package greenhousesimulator;
 
+import greenhousesimulator.ui.GameWindow;
 import java.util.Random;
 
 public class WeatherThread extends Thread {
     private Greenhouse greenhouse;
+    private GameWindow gameWindow;
     private volatile boolean running = true;
     private Random random = new Random();
-    private int updateInterval = 30000; // 30 секунд
+    private int updateInterval = 30000;
     
-    public WeatherThread(Greenhouse greenhouse) {
+    public WeatherThread(Greenhouse greenhouse, GameWindow gameWindow) {
         this.greenhouse = greenhouse;
+        this.gameWindow = gameWindow;
     }
     
     @Override
@@ -49,7 +52,7 @@ public class WeatherThread extends Thread {
                     greenhouse.setHumidity(
                         Math.max(30, Math.min(90, greenhouse.getHumidity() + humidityChange)));
                     
-                    System.out.println("\n[ПОГОДА] Сейчас: " + weather + 
+                    gameWindow.log("\n[ПОГОДА] Сейчас: " + weather + 
                                      ", t°: " + greenhouse.getTemperature() + 
                                      "°C, влажность: " + greenhouse.getHumidity() + "%");
                     
@@ -65,15 +68,15 @@ public class WeatherThread extends Thread {
         int event = random.nextInt(3);
         switch (event) {
             case 0:
-                System.out.println("[СОБЫТИЕ] Солнечный день! Все растения получают +10 к здоровью.");
+                gameWindow.log("[СОБЫТИЕ] Солнечный день! Все растения получают +10 к здоровью.");
                 greenhouse.getPlants().forEach(p -> p.restoreHealth(10));
                 break;
             case 1:
-                System.out.println("[СОБЫТИЕ] Легкий дождик полил растения.");
+                gameWindow.log("[СОБЫТИЕ] Легкий дождик полил растения.");
                 greenhouse.getPlants().forEach(p -> p.water(20));
                 break;
             case 2:
-                System.out.println("[СОБЫТИЕ] Плодородный день! Удобрения работают эффективнее.");
+                gameWindow.log("[СОБЫТИЕ] Плодородный день! Удобрения работают эффективнее.");
                 greenhouse.getPlants().forEach(p -> p.fertilize(10));
                 break;
         }
